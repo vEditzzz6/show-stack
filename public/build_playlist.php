@@ -157,11 +157,17 @@ if ($filmsDir && is_dir($filmsDir)) {
         $filmsM3u .= $stream . "\n";
 
         $filmsJson[] = [
-            'title'  => $meta['title'],
-            'poster' => $meta['poster'],
-            'group'  => $group,
-            'year'   => $year,
-            'stream' => $stream,
+            'title'    => $meta['title'],
+            'poster'   => $meta['poster'],
+            'backdrop' => $meta['backdrop'],
+            'overview' => $meta['overview'],
+            'rating'   => $meta['rating'],
+            'runtime'  => $meta['runtime'],
+            'genres'   => $meta['genres'],
+            'group'    => $group,
+            'year'     => $meta['year'] ?? $year,
+            'tmdb_id'  => $meta['tmdb_id'],
+            'stream'   => $stream,
         ];
     }
 }
