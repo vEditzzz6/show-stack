@@ -91,8 +91,8 @@ const Index = () => {
         <>
           <Hero
             title={heroSeries?.title ?? "Binge Without Limits."}
-            tagline="Every season, every episode — organized and ready to play. Pulled live from your Series library."
-            poster={heroSeries?.poster}
+            tagline={heroSeries?.overview || "Every season, every episode — organized and ready to play. Pulled live from your Series library."}
+            poster={heroSeries?.backdrop || heroSeries?.poster}
             onInfo={() => heroSeries && setSelectedSeries(heroSeries)}
             onPlay={() => {
               const first = heroSeries?.seasons[0]?.episodes[0]?.stream;
