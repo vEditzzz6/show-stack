@@ -122,6 +122,15 @@ const Index = () => {
         Vstreamzzz — Personal media library. Powered by your build_playlist.php.
       </footer>
 
+      <FilmDetail
+        open={!!selectedFilm}
+        film={selectedFilm}
+        onOpenChange={(v) => !v && setSelectedFilm(null)}
+        onPlay={(url) => {
+          setSelectedFilm(null);
+          setPlayUrl(url);
+        }}
+      />
       <SeriesDetail
         open={!!selectedSeries}
         series={selectedSeries}
