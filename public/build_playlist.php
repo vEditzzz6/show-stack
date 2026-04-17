@@ -176,9 +176,43 @@ file_put_contents(__DIR__ . '/films.m3u',  $filmsM3u);
 file_put_contents(__DIR__ . '/films.json', json_encode($filmsJson, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
 
 // ---------- SERIES ----------
-// Structure: Series/<Show>/Season X/<Episode>.ext
+// Structure: Series/<Show>/Season X/<Episode>.ext  (recursive)
 $seriesM3u = "#EXTM3U\n";
-$seriesMap = []; // show => [ 'title','poster','seasons' => [ seasonNum => [ episodes ] ] ]
+$seriesMap = []; // show => [ meta..., 'seasons' => [ seasonNum => [ episodes ] ] ]
+
+/**
+ * Fetch + cache TMDB season details (overview, air dates, stills) for a TV show.
+ * Returns map: episodeNumber => [ 'still' => url, 'air_date' => 'YYYY-MM-DD', 'overview' => '...', 'name' => '...' ]
+ */
+function tmdbSeasonLookup(int $tvId, int $seasonNum, string $apiKey, string $cacheDir): array {
+    $cacheKey  = md5("season|{$tvId}|{$seasonNum}|v1");
+    $cacheFile = $cacheDir . '/' . $cacheKey . '.json';
+    if (file_exists($cacheFile)) {
+        $cached = json_decode(file_get_contents($cacheFile), true);
+        if (is_array($cached)) return $cached;
+    }
+
+    $map = [];
+    $url = "https://api.themoviedb.org/3/tv/{$tvId}/season/{$seasonNum}?api_key={$apiKey}";
+    $res = @file_get_contents($url);
+    if ($res) {
+        $data = json_decode($res, true);
+        if (!empty($data['episodes'])) {
+            foreach ($data['episodes'] as $ep) {
+                $num = (int)($ep['episode_number'] ?? 0);
+                if (!$num) continue;
+                $map[$num] = [
+                    'name'     => $ep['name'] ?? '',
+                    'overview' => $ep['overview'] ?? '',
+                    'air_date' => $ep['air_date'] ?? null,
+                    'still'    => !empty($ep['still_path']) ? "https://image.tmdb.org/t/p/w300" . $ep['still_path'] : '',
+                ];
+            }
+        }
+    }
+    file_put_contents($cacheFile, json_encode($map));
+    return $map;
+}
 
 if ($seriesDir && is_dir($seriesDir)) {
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($seriesDir, RecursiveDirectoryIterator::SKIP_DOTS));
@@ -210,9 +244,15 @@ if ($seriesDir && is_dir($seriesDir)) {
             $cleanShow = cleanTitle($showFolder);
             $meta = tmdbLookup('tv', $cleanShow, null, $apiKey, $cacheDir, $posterDir, $posterUrl);
             $seriesMap[$showFolder] = [
-                'title'   => $meta['title'],
-                'poster'  => $meta['poster'],
-                'seasons' => [],
+                'title'    => $meta['title'],
+                'poster'   => $meta['poster'],
+                'backdrop' => $meta['backdrop'],
+                'overview' => $meta['overview'],
+                'rating'   => $meta['rating'],
+                'genres'   => $meta['genres'],
+                'year'     => $meta['year'],
+                'tmdb_id'  => $meta['tmdb_id'],
+                'seasons'  => [],
             ];
         }
 
@@ -227,19 +267,41 @@ if ($seriesDir && is_dir($seriesDir)) {
     }
 }
 
-// Normalise series JSON shape and sort episodes
+// Normalise series JSON shape, enrich episodes from TMDB season endpoint
 $seriesJson = [];
 foreach ($seriesMap as $show) {
     $seasons = [];
     ksort($show['seasons']);
     foreach ($show['seasons'] as $num => $eps) {
         usort($eps, fn($a, $b) => ($a['episode'] ?? 0) <=> ($b['episode'] ?? 0));
+
+        // Pull TMDB per-episode metadata if we know the show id
+        $epMeta = $show['tmdb_id'] ? tmdbSeasonLookup((int)$show['tmdb_id'], (int)$num, $apiKey, $cacheDir) : [];
+
+        $eps = array_map(function ($ep) use ($epMeta) {
+            $n = $ep['episode'];
+            if ($n && isset($epMeta[$n])) {
+                $m = $epMeta[$n];
+                $ep['title']    = $m['name'] ?: $ep['title'];
+                $ep['overview'] = $m['overview'] ?? '';
+                $ep['air_date'] = $m['air_date'] ?? null;
+                $ep['still']    = $m['still'] ?? '';
+            }
+            return $ep;
+        }, $eps);
+
         $seasons[] = ['season' => $num, 'episodes' => $eps];
     }
     $seriesJson[] = [
-        'title'   => $show['title'],
-        'poster'  => $show['poster'],
-        'seasons' => $seasons,
+        'title'    => $show['title'],
+        'poster'   => $show['poster'],
+        'backdrop' => $show['backdrop'] ?? '',
+        'overview' => $show['overview'] ?? '',
+        'rating'   => $show['rating'] ?? null,
+        'genres'   => $show['genres'] ?? [],
+        'year'     => $show['year'] ?? null,
+        'tmdb_id'  => $show['tmdb_id'] ?? null,
+        'seasons'  => $seasons,
     ];
 }
 

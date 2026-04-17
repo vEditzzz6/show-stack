@@ -16,6 +16,9 @@ export interface Episode {
   episode: number | null;
   title: string;
   stream: string;
+  overview?: string;
+  air_date?: string | null;
+  still?: string;
 }
 
 export interface Season {
@@ -26,6 +29,12 @@ export interface Season {
 export interface Series {
   title: string;
   poster: string;
+  backdrop?: string;
+  overview?: string;
+  rating?: number | null;
+  genres?: string[];
+  year?: string | null;
+  tmdb_id?: number | null;
   seasons: Season[];
 }
 
