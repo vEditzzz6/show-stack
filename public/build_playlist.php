@@ -42,10 +42,11 @@ function extractYear(string $title): ?string {
 
 /**
  * Look up TMDB metadata (movie or tv) with on-disk caching.
- * Returns [ 'title' => string, 'poster' => string (url or '') ]
+ * Returns enriched array: title, poster, backdrop, overview, rating, runtime, genres, year, tmdb_id.
  */
 function tmdbLookup(string $type, string $cleanTitle, ?string $year, string $apiKey, string $cacheDir, string $posterDir, string $posterUrl): array {
-    $cacheKey  = md5($type . '|' . $cleanTitle);
+    // Bump the cache version when shape changes so old caches get rebuilt.
+    $cacheKey  = md5($type . '|' . $cleanTitle . '|v2');
     $cacheFile = $cacheDir . '/' . $cacheKey . '.json';
 
     if (file_exists($cacheFile)) {
@@ -53,8 +54,17 @@ function tmdbLookup(string $type, string $cleanTitle, ?string $year, string $api
         if ($cached) return $cached;
     }
 
-    $title  = $cleanTitle;
-    $poster = '';
+    $result = [
+        'title'    => $cleanTitle,
+        'poster'   => '',
+        'backdrop' => '',
+        'overview' => '',
+        'rating'   => null,
+        'runtime'  => null,
+        'genres'   => [],
+        'year'     => $year,
+        'tmdb_id'  => null,
+    ];
 
     $endpoint = $type === 'tv' ? 'search/tv' : 'search/movie';
     $url = "https://api.themoviedb.org/3/{$endpoint}?api_key={$apiKey}&query=" . urlencode($cleanTitle);
@@ -67,8 +77,41 @@ function tmdbLookup(string $type, string $cleanTitle, ?string $year, string $api
         $data = json_decode($response, true);
         if (!empty($data['results'][0])) {
             $hit = $data['results'][0];
-            $title = $hit[$type === 'tv' ? 'name' : 'title'] ?? $cleanTitle;
+            $result['title']    = $hit[$type === 'tv' ? 'name' : 'title'] ?? $cleanTitle;
+            $result['overview'] = $hit['overview'] ?? '';
+            $result['rating']   = isset($hit['vote_average']) ? round((float)$hit['vote_average'], 1) : null;
+            $result['tmdb_id']  = $hit['id'] ?? null;
 
+            $dateField = $type === 'tv' ? 'first_air_date' : 'release_date';
+            if (!empty($hit[$dateField])) {
+                $result['year'] = substr($hit[$dateField], 0, 4);
+            }
+
+            // Detail fetch for runtime + genres
+            if (!empty($hit['id'])) {
+                $detailUrl = "https://api.themoviedb.org/3/{$type}/{$hit['id']}?api_key={$apiKey}";
+                $detailRes = @file_get_contents($detailUrl);
+                if ($detailRes) {
+                    $detail = json_decode($detailRes, true);
+                    if ($detail) {
+                        if ($type === 'movie') {
+                            $result['runtime'] = $detail['runtime'] ?? null;
+                        } else {
+                            $result['runtime'] = !empty($detail['episode_run_time']) ? (int)$detail['episode_run_time'][0] : null;
+                        }
+                        if (!empty($detail['genres'])) {
+                            $result['genres'] = array_map(fn($g) => $g['name'], $detail['genres']);
+                        }
+                    }
+                }
+            }
+
+            // Backdrop (remote URL is fine; TMDB CDN is fast and CORS-friendly)
+            if (!empty($hit['backdrop_path'])) {
+                $result['backdrop'] = "https://image.tmdb.org/t/p/original" . $hit['backdrop_path'];
+            }
+
+            // Poster downloaded locally so the UI keeps working if TMDB is offline
             if (!empty($hit['poster_path'])) {
                 $remote = "https://image.tmdb.org/t/p/w500" . $hit['poster_path'];
                 $local  = $posterDir . '/' . $cacheKey . '.jpg';
@@ -77,13 +120,12 @@ function tmdbLookup(string $type, string $cleanTitle, ?string $year, string $api
                     if ($img) file_put_contents($local, $img);
                 }
                 if (file_exists($local)) {
-                    $poster = $posterUrl . '/' . $cacheKey . '.jpg';
+                    $result['poster'] = $posterUrl . '/' . $cacheKey . '.jpg';
                 }
             }
         }
     }
 
-    $result = ['title' => $title, 'poster' => $poster];
     file_put_contents($cacheFile, json_encode($result));
     return $result;
 }
