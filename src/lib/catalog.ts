@@ -1,8 +1,14 @@
 export interface Film {
   title: string;
   poster: string;
+  backdrop?: string;
+  overview?: string;
+  rating?: number | null;
+  runtime?: number | null;
+  genres?: string[];
   group: string;
   year: string | null;
+  tmdb_id?: number | null;
   stream: string;
 }
 
