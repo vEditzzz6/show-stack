@@ -3,6 +3,7 @@ import { Navbar } from "@/components/Navbar";
 import { Hero } from "@/components/Hero";
 import { Row } from "@/components/Row";
 import { SeriesDetail } from "@/components/SeriesDetail";
+import { FilmDetail } from "@/components/FilmDetail";
 import { Player } from "@/components/Player";
 import { fetchFilms, fetchSeries, type Film, type Series } from "@/lib/catalog";
 
@@ -29,6 +30,7 @@ const Index = () => {
   const [films, setFilms] = useState<Film[]>([]);
   const [series, setSeries] = useState<Series[]>([]);
   const [selectedSeries, setSelectedSeries] = useState<Series | null>(null);
+  const [selectedFilm, setSelectedFilm] = useState<Film | null>(null);
   const [playUrl, setPlayUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,9 +66,10 @@ const Index = () => {
         <>
           <Hero
             title={heroFilm?.title ?? "Your Library, Cinematic."}
-            tagline="Stream films pulled straight from your Vstreamzzz collection. Posters and metadata enriched automatically."
-            poster={heroFilm?.poster}
+            tagline={heroFilm?.overview || "Stream films pulled straight from your Vstreamzzz collection. Posters and metadata enriched automatically."}
+            poster={heroFilm?.backdrop || heroFilm?.poster}
             onPlay={() => heroFilm?.stream && setPlayUrl(heroFilm.stream)}
+            onInfo={() => heroFilm && setSelectedFilm(heroFilm)}
           />
           <div className="-mt-24 relative z-10">
             {Object.entries(filmGroups).map(([group, items]) => (
@@ -74,7 +77,7 @@ const Index = () => {
                 key={group}
                 title={group}
                 items={items.map((f) => ({ title: f.title, poster: f.poster, subtitle: f.year ?? undefined }))}
-                onSelect={(i) => items[i].stream && setPlayUrl(items[i].stream)}
+                onSelect={(i) => setSelectedFilm(items[i])}
               />
             ))}
             {!Object.keys(filmGroups).length && (
