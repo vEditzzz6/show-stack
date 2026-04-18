@@ -38,7 +38,7 @@ export interface Series {
   seasons: Season[];
 }
 
-import { listEnabledSources } from "./sources";
+import { listEnabledInlineSources, listEnabledSources } from "./sources";
 
 const BASE = "https://vstreamzzz.veditzzz.site";
 
@@ -52,16 +52,29 @@ async function safeJson<T>(url: string, fallback: T): Promise<T> {
   }
 }
 
-// Merge default catalog with any user-added URLs, de-duped by title.
+function safeParseInline<T>(raw: string): T[] {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Merge default catalog with any user-added URLs and inline (uploaded/generated)
+// payloads, de-duped by title.
 async function fetchMerged<T extends { title: string }>(
   defaultUrl: string,
   kind: "films" | "series"
 ): Promise<T[]> {
   const urls = [defaultUrl, ...listEnabledSources(kind).map((s) => s.url)];
-  const results = await Promise.all(urls.map((u) => safeJson<T[]>(u, [])));
+  const remoteResults = await Promise.all(urls.map((u) => safeJson<T[]>(u, [])));
+  const inlineResults = listEnabledInlineSources(kind).map((s) =>
+    safeParseInline<T>(s.data)
+  );
   const merged: T[] = [];
   const seen = new Set<string>();
-  for (const list of results) {
+  for (const list of [...remoteResults, ...inlineResults]) {
     for (const item of list) {
       const key = (item.title || "").toLowerCase().trim();
       if (!key || seen.has(key)) continue;
