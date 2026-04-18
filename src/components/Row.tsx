@@ -6,9 +6,11 @@ interface RowProps {
   title: string;
   items: PosterItem[];
   onSelect?: (index: number) => void;
+  isFavorite?: (index: number) => boolean;
+  onToggleFavorite?: (index: number) => void;
 }
 
-export const Row = ({ title, items, onSelect }: RowProps) => {
+export const Row = ({ title, items, onSelect, isFavorite, onToggleFavorite }: RowProps) => {
   const ref = useRef<HTMLDivElement>(null);
 
   const scroll = (dir: "l" | "r") => {
@@ -35,7 +37,13 @@ export const Row = ({ title, items, onSelect }: RowProps) => {
           className="scrollbar-hide flex gap-3 overflow-x-auto scroll-smooth pb-2 md:gap-4"
         >
           {items.map((item, i) => (
-            <PosterCard key={`${item.title}-${i}`} item={item} onClick={() => onSelect?.(i)} />
+            <PosterCard
+              key={`${item.title}-${i}`}
+              item={item}
+              onClick={() => onSelect?.(i)}
+              isFavorite={isFavorite?.(i)}
+              onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(i) : undefined}
+            />
           ))}
         </div>
         <button
