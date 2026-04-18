@@ -70,7 +70,7 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
       });
       return;
     }
-    addSource(parsed.data);
+    addSource(parsed.data as SourceInput);
     emitSourcesChanged();
     setName("");
     setUrl("");
