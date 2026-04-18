@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { Hero } from "@/components/Hero";
 import { Row } from "@/components/Row";
 import { SeriesDetail } from "@/components/SeriesDetail";
 import { FilmDetail } from "@/components/FilmDetail";
 import { Player } from "@/components/Player";
+import { ContinueWatchingRow } from "@/components/ContinueWatchingRow";
 import { fetchFilms, fetchSeries, type Film, type Series } from "@/lib/catalog";
+import {
+  listContinueWatching,
+  makeId,
+  removeProgress,
+  upsertMeta,
+  type ContinueItem,
+} from "@/lib/progress";
 
 // Demo fallback so the UI shines even before films.json/series.json are live.
 const DEMO_FILMS: Film[] = Array.from({ length: 12 }).map((_, i) => ({
@@ -32,11 +40,55 @@ const Index = () => {
   const [selectedSeries, setSelectedSeries] = useState<Series | null>(null);
   const [selectedFilm, setSelectedFilm] = useState<Film | null>(null);
   const [playUrl, setPlayUrl] = useState<string | null>(null);
+  const [continueItems, setContinueItems] = useState<ContinueItem[]>([]);
+
+  const refreshContinue = useCallback(() => {
+    setContinueItems(listContinueWatching());
+  }, []);
 
   useEffect(() => {
     fetchFilms().then((d) => setFilms(d.length ? d : DEMO_FILMS));
     fetchSeries().then((d) => setSeries(d.length ? d : DEMO_SERIES));
+    refreshContinue();
+  }, [refreshContinue]);
+
+  // Refresh Continue Watching whenever the player closes.
+  useEffect(() => {
+    if (!playUrl) refreshContinue();
+  }, [playUrl, refreshContinue]);
+
+  const playFilm = useCallback((film: Film) => {
+    if (!film.stream) return;
+    upsertMeta({
+      id: makeId(film.stream),
+      kind: "film",
+      title: film.title,
+      poster: film.backdrop || film.poster,
+      subtitle: film.year ?? undefined,
+      stream: film.stream,
+      filmTitle: film.title,
+    });
+    setPlayUrl(film.stream);
   }, []);
+
+  const playEpisode = useCallback(
+    (s: Series, seasonNum: number, ep: { episode: number | null; title: string; stream: string; still?: string }) => {
+      if (!ep.stream) return;
+      upsertMeta({
+        id: makeId(ep.stream),
+        kind: "episode",
+        title: s.title,
+        poster: ep.still || s.backdrop || s.poster,
+        subtitle: `S${seasonNum} · E${ep.episode ?? ""} — ${ep.title}`,
+        stream: ep.stream,
+        seriesTitle: s.title,
+        season: seasonNum,
+        episode: ep.episode,
+      });
+      setPlayUrl(ep.stream);
+    },
+    []
+  );
 
   // Films grouped by category
   const filmGroups = useMemo(() => {
@@ -58,6 +110,17 @@ const Index = () => {
   const heroFilm = films[0];
   const heroSeries = series[0];
 
+  const handleContinuePlay = (item: ContinueItem) => {
+    // Re-register meta in case the title changed and resume.
+    upsertMeta(item);
+    setPlayUrl(item.stream);
+  };
+
+  const handleContinueRemove = (id: string) => {
+    removeProgress(id);
+    refreshContinue();
+  };
+
   return (
     <main className="min-h-screen bg-background">
       <Navbar active={active} onChange={setActive} query={query} onQuery={setQuery} />
@@ -68,10 +131,15 @@ const Index = () => {
             title={heroFilm?.title ?? "Your Library, Cinematic."}
             tagline={heroFilm?.overview || "Stream films pulled straight from your Vstreamzzz collection. Posters and metadata enriched automatically."}
             poster={heroFilm?.backdrop || heroFilm?.poster}
-            onPlay={() => heroFilm?.stream && setPlayUrl(heroFilm.stream)}
+            onPlay={() => heroFilm && playFilm(heroFilm)}
             onInfo={() => heroFilm && setSelectedFilm(heroFilm)}
           />
           <div className="-mt-24 relative z-10">
+            <ContinueWatchingRow
+              items={continueItems}
+              onPlay={handleContinuePlay}
+              onRemove={handleContinueRemove}
+            />
             {Object.entries(filmGroups).map(([group, items]) => (
               <Row
                 key={group}
@@ -95,11 +163,19 @@ const Index = () => {
             poster={heroSeries?.backdrop || heroSeries?.poster}
             onInfo={() => heroSeries && setSelectedSeries(heroSeries)}
             onPlay={() => {
-              const first = heroSeries?.seasons[0]?.episodes[0]?.stream;
-              if (first) setPlayUrl(first);
+              const firstSeason = heroSeries?.seasons[0];
+              const firstEp = firstSeason?.episodes[0];
+              if (heroSeries && firstSeason && firstEp) {
+                playEpisode(heroSeries, firstSeason.season, firstEp);
+              }
             }}
           />
           <div className="-mt-24 relative z-10">
+            <ContinueWatchingRow
+              items={continueItems}
+              onPlay={handleContinuePlay}
+              onRemove={handleContinueRemove}
+            />
             <Row
               title="All Series"
               items={filteredSeries.map((s) => ({
@@ -127,8 +203,12 @@ const Index = () => {
         film={selectedFilm}
         onOpenChange={(v) => !v && setSelectedFilm(null)}
         onPlay={(url) => {
+          if (selectedFilm) {
+            playFilm({ ...selectedFilm, stream: url });
+          } else {
+            setPlayUrl(url);
+          }
           setSelectedFilm(null);
-          setPlayUrl(url);
         }}
       />
       <SeriesDetail
@@ -136,6 +216,16 @@ const Index = () => {
         series={selectedSeries}
         onOpenChange={(v) => !v && setSelectedSeries(null)}
         onPlay={(url) => {
+          if (selectedSeries) {
+            for (const season of selectedSeries.seasons) {
+              const ep = season.episodes.find((e) => e.stream === url);
+              if (ep) {
+                playEpisode(selectedSeries, season.season, ep);
+                setSelectedSeries(null);
+                return;
+              }
+            }
+          }
           setSelectedSeries(null);
           setPlayUrl(url);
         }}
