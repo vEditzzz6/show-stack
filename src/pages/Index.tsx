@@ -8,12 +8,20 @@ import { Player } from "@/components/Player";
 import { ContinueWatchingRow } from "@/components/ContinueWatchingRow";
 import { fetchFilms, fetchSeries, type Film, type Series } from "@/lib/catalog";
 import {
+  getProgress,
   listContinueWatching,
   makeId,
   removeProgress,
   upsertMeta,
   type ContinueItem,
 } from "@/lib/progress";
+import {
+  favoriteIdFor,
+  isFavorite as isFav,
+  listFavorites,
+  toggleFavorite,
+  type FavoriteItem,
+} from "@/lib/favorites";
 
 // Demo fallback so the UI shines even before films.json/series.json are live.
 const DEMO_FILMS: Film[] = Array.from({ length: 12 }).map((_, i) => ({
@@ -41,16 +49,22 @@ const Index = () => {
   const [selectedFilm, setSelectedFilm] = useState<Film | null>(null);
   const [playUrl, setPlayUrl] = useState<string | null>(null);
   const [continueItems, setContinueItems] = useState<ContinueItem[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
 
   const refreshContinue = useCallback(() => {
     setContinueItems(listContinueWatching());
+  }, []);
+
+  const refreshFavorites = useCallback(() => {
+    setFavorites(listFavorites());
   }, []);
 
   useEffect(() => {
     fetchFilms().then((d) => setFilms(d.length ? d : DEMO_FILMS));
     fetchSeries().then((d) => setSeries(d.length ? d : DEMO_SERIES));
     refreshContinue();
-  }, [refreshContinue]);
+    refreshFavorites();
+  }, [refreshContinue, refreshFavorites]);
 
   // Refresh Continue Watching whenever the player closes.
   useEffect(() => {
@@ -121,6 +135,86 @@ const Index = () => {
     refreshContinue();
   };
 
+  // ---- Favorites helpers ----
+  const filmFavId = (f: Film) => favoriteIdFor("film", f.stream || f.title);
+  const seriesFavId = (s: Series) => favoriteIdFor("series", s.title);
+
+  const toggleFilmFav = (f: Film) => {
+    toggleFavorite({
+      id: filmFavId(f),
+      kind: "film",
+      title: f.title,
+      poster: f.poster,
+      subtitle: f.year ?? undefined,
+      stream: f.stream,
+    });
+    refreshFavorites();
+  };
+
+  const toggleSeriesFav = (s: Series) => {
+    toggleFavorite({
+      id: seriesFavId(s),
+      kind: "series",
+      title: s.title,
+      poster: s.poster,
+      subtitle: `${s.seasons.length} season${s.seasons.length === 1 ? "" : "s"}`,
+      seriesTitle: s.title,
+    });
+    refreshFavorites();
+  };
+
+  // Film stream URL → 0-100 progress (for poster overlay).
+  const filmProgress = (f: Film): number | undefined => {
+    if (!f.stream) return undefined;
+    const p = getProgress(makeId(f.stream));
+    if (!p) return undefined;
+    return Math.min(100, Math.max(0, (p.position / p.duration) * 100));
+  };
+
+  // Series progress = max progress across all its episodes.
+  const seriesProgress = (s: Series): number | undefined => {
+    let best = 0;
+    for (const season of s.seasons) {
+      for (const ep of season.episodes) {
+        if (!ep.stream) continue;
+        const p = getProgress(makeId(ep.stream));
+        if (p && p.duration > 0) {
+          best = Math.max(best, (p.position / p.duration) * 100);
+        }
+      }
+    }
+    return best > 0 ? Math.min(100, best) : undefined;
+  };
+
+  // Resolve favorite items for current tab into PosterItems + handlers.
+  const favFilms = useMemo(
+    () => favorites.filter((f) => f.kind === "film"),
+    [favorites]
+  );
+  const favSeries = useMemo(
+    () => favorites.filter((f) => f.kind === "series"),
+    [favorites]
+  );
+
+  const handleFavFilmSelect = (i: number) => {
+    const fav = favFilms[i];
+    const match = films.find((f) => f.stream === fav.stream) || {
+      title: fav.title,
+      poster: fav.poster ?? "",
+      group: "My List",
+      year: null,
+      stream: fav.stream ?? "",
+    } as Film;
+    setSelectedFilm(match);
+  };
+
+  const handleFavSeriesSelect = (i: number) => {
+    const fav = favSeries[i];
+    const match = series.find((s) => s.title === fav.seriesTitle);
+    if (match) setSelectedSeries(match);
+  };
+
+
   return (
     <main className="min-h-screen bg-background">
       <Navbar active={active} onChange={setActive} query={query} onQuery={setQuery} />
@@ -140,12 +234,36 @@ const Index = () => {
               onPlay={handleContinuePlay}
               onRemove={handleContinueRemove}
             />
+            {favFilms.length > 0 && (
+              <Row
+                title="My List"
+                items={favFilms.map((f) => ({
+                  title: f.title,
+                  poster: f.poster ?? "",
+                  subtitle: f.subtitle,
+                }))}
+                onSelect={handleFavFilmSelect}
+                isFavorite={() => true}
+                onToggleFavorite={(i) => {
+                  const fav = favFilms[i];
+                  const match = films.find((f) => f.stream === fav.stream);
+                  if (match) toggleFilmFav(match);
+                }}
+              />
+            )}
             {Object.entries(filmGroups).map(([group, items]) => (
               <Row
                 key={group}
                 title={group}
-                items={items.map((f) => ({ title: f.title, poster: f.poster, subtitle: f.year ?? undefined }))}
+                items={items.map((f) => ({
+                  title: f.title,
+                  poster: f.poster,
+                  subtitle: f.year ?? undefined,
+                  progress: filmProgress(f),
+                }))}
                 onSelect={(i) => setSelectedFilm(items[i])}
+                isFavorite={(i) => isFav(filmFavId(items[i]))}
+                onToggleFavorite={(i) => toggleFilmFav(items[i])}
               />
             ))}
             {!Object.keys(filmGroups).length && (
@@ -176,14 +294,34 @@ const Index = () => {
               onPlay={handleContinuePlay}
               onRemove={handleContinueRemove}
             />
+            {favSeries.length > 0 && (
+              <Row
+                title="My List"
+                items={favSeries.map((f) => ({
+                  title: f.title,
+                  poster: f.poster ?? "",
+                  subtitle: f.subtitle,
+                }))}
+                onSelect={handleFavSeriesSelect}
+                isFavorite={() => true}
+                onToggleFavorite={(i) => {
+                  const fav = favSeries[i];
+                  const match = series.find((s) => s.title === fav.seriesTitle);
+                  if (match) toggleSeriesFav(match);
+                }}
+              />
+            )}
             <Row
               title="All Series"
               items={filteredSeries.map((s) => ({
                 title: s.title,
                 poster: s.poster,
                 subtitle: `${s.seasons.length} season${s.seasons.length === 1 ? "" : "s"}`,
+                progress: seriesProgress(s),
               }))}
               onSelect={(i) => setSelectedSeries(filteredSeries[i])}
+              isFavorite={(i) => isFav(seriesFavId(filteredSeries[i]))}
+              onToggleFavorite={(i) => toggleSeriesFav(filteredSeries[i])}
             />
             {!filteredSeries.length && (
               <p className="px-6 py-24 text-center text-muted-foreground md:px-16">
