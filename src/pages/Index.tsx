@@ -234,12 +234,36 @@ const Index = () => {
               onPlay={handleContinuePlay}
               onRemove={handleContinueRemove}
             />
+            {favFilms.length > 0 && (
+              <Row
+                title="My List"
+                items={favFilms.map((f) => ({
+                  title: f.title,
+                  poster: f.poster ?? "",
+                  subtitle: f.subtitle,
+                }))}
+                onSelect={handleFavFilmSelect}
+                isFavorite={() => true}
+                onToggleFavorite={(i) => {
+                  const fav = favFilms[i];
+                  const match = films.find((f) => f.stream === fav.stream);
+                  if (match) toggleFilmFav(match);
+                }}
+              />
+            )}
             {Object.entries(filmGroups).map(([group, items]) => (
               <Row
                 key={group}
                 title={group}
-                items={items.map((f) => ({ title: f.title, poster: f.poster, subtitle: f.year ?? undefined }))}
+                items={items.map((f) => ({
+                  title: f.title,
+                  poster: f.poster,
+                  subtitle: f.year ?? undefined,
+                  progress: filmProgress(f),
+                }))}
                 onSelect={(i) => setSelectedFilm(items[i])}
+                isFavorite={(i) => isFav(filmFavId(items[i]))}
+                onToggleFavorite={(i) => toggleFilmFav(items[i])}
               />
             ))}
             {!Object.keys(filmGroups).length && (
@@ -270,14 +294,34 @@ const Index = () => {
               onPlay={handleContinuePlay}
               onRemove={handleContinueRemove}
             />
+            {favSeries.length > 0 && (
+              <Row
+                title="My List"
+                items={favSeries.map((f) => ({
+                  title: f.title,
+                  poster: f.poster ?? "",
+                  subtitle: f.subtitle,
+                }))}
+                onSelect={handleFavSeriesSelect}
+                isFavorite={() => true}
+                onToggleFavorite={(i) => {
+                  const fav = favSeries[i];
+                  const match = series.find((s) => s.title === fav.seriesTitle);
+                  if (match) toggleSeriesFav(match);
+                }}
+              />
+            )}
             <Row
               title="All Series"
               items={filteredSeries.map((s) => ({
                 title: s.title,
                 poster: s.poster,
                 subtitle: `${s.seasons.length} season${s.seasons.length === 1 ? "" : "s"}`,
+                progress: seriesProgress(s),
               }))}
               onSelect={(i) => setSelectedSeries(filteredSeries[i])}
+              isFavorite={(i) => isFav(seriesFavId(filteredSeries[i]))}
+              onToggleFavorite={(i) => toggleSeriesFav(filteredSeries[i])}
             />
             {!filteredSeries.length && (
               <p className="px-6 py-24 text-center text-muted-foreground md:px-16">
