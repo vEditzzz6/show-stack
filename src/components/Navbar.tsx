@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Settings } from "lucide-react";
+import { SettingsDialog } from "./SettingsDialog";
 
 interface NavbarProps {
   active: "films" | "series";
@@ -10,6 +11,7 @@ interface NavbarProps {
 
 export const Navbar = ({ active, onChange, query, onQuery }: NavbarProps) => {
   const [scrolled, setScrolled] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   if (typeof window !== "undefined") {
     window.onscroll = () => setScrolled(window.scrollY > 40);
@@ -51,6 +53,13 @@ export const Navbar = ({ active, onChange, query, onQuery }: NavbarProps) => {
               className="w-40 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
           </div>
+          <button
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Open settings"
+            className="rounded-sm border border-border bg-background/70 p-2 text-muted-foreground backdrop-blur transition-colors hover:text-foreground"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
@@ -68,6 +77,9 @@ export const Navbar = ({ active, onChange, query, onQuery }: NavbarProps) => {
           </button>
         ))}
       </div>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </header>
   );
 };
+
