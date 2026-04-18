@@ -38,6 +38,8 @@ export interface Series {
   seasons: Season[];
 }
 
+import { listEnabledSources } from "./sources";
+
 const BASE = "https://vstreamzzz.veditzzz.site";
 
 async function safeJson<T>(url: string, fallback: T): Promise<T> {
@@ -50,5 +52,25 @@ async function safeJson<T>(url: string, fallback: T): Promise<T> {
   }
 }
 
-export const fetchFilms = () => safeJson<Film[]>(`${BASE}/films.json`, []);
-export const fetchSeries = () => safeJson<Series[]>(`${BASE}/series.json`, []);
+// Merge default catalog with any user-added URLs, de-duped by title.
+async function fetchMerged<T extends { title: string }>(
+  defaultUrl: string,
+  kind: "films" | "series"
+): Promise<T[]> {
+  const urls = [defaultUrl, ...listEnabledSources(kind).map((s) => s.url)];
+  const results = await Promise.all(urls.map((u) => safeJson<T[]>(u, [])));
+  const merged: T[] = [];
+  const seen = new Set<string>();
+  for (const list of results) {
+    for (const item of list) {
+      const key = (item.title || "").toLowerCase().trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+  }
+  return merged;
+}
+
+export const fetchFilms = () => fetchMerged<Film>(`${BASE}/films.json`, "films");
+export const fetchSeries = () => fetchMerged<Series>(`${BASE}/series.json`, "series");

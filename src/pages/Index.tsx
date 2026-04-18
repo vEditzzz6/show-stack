@@ -59,12 +59,19 @@ const Index = () => {
     setFavorites(listFavorites());
   }, []);
 
-  useEffect(() => {
+  const reloadCatalog = useCallback(() => {
     fetchFilms().then((d) => setFilms(d.length ? d : DEMO_FILMS));
     fetchSeries().then((d) => setSeries(d.length ? d : DEMO_SERIES));
+  }, []);
+
+  useEffect(() => {
+    reloadCatalog();
     refreshContinue();
     refreshFavorites();
-  }, [refreshContinue, refreshFavorites]);
+    const onSourcesChanged = () => reloadCatalog();
+    window.addEventListener("vstreamzzz:sources-changed", onSourcesChanged);
+    return () => window.removeEventListener("vstreamzzz:sources-changed", onSourcesChanged);
+  }, [reloadCatalog, refreshContinue, refreshFavorites]);
 
   // Refresh Continue Watching whenever the player closes.
   useEffect(() => {
