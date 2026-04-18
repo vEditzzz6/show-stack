@@ -38,7 +38,9 @@ const sourceSchema = z.object({
     .url("Must be a valid URL (https://…)")
     .max(500, "URL too long"),
   kind: z.enum(["films", "series"]),
-}) satisfies z.ZodType<{ name: string; url: string; kind: SourceKind }>;
+});
+
+type SourceInput = { name: string; url: string; kind: SourceKind };
 
 interface SettingsDialogProps {
   open: boolean;
