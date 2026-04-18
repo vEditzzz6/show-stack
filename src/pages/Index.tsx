@@ -8,12 +8,20 @@ import { Player } from "@/components/Player";
 import { ContinueWatchingRow } from "@/components/ContinueWatchingRow";
 import { fetchFilms, fetchSeries, type Film, type Series } from "@/lib/catalog";
 import {
+  getProgress,
   listContinueWatching,
   makeId,
   removeProgress,
   upsertMeta,
   type ContinueItem,
 } from "@/lib/progress";
+import {
+  favoriteIdFor,
+  isFavorite as isFav,
+  listFavorites,
+  toggleFavorite,
+  type FavoriteItem,
+} from "@/lib/favorites";
 
 // Demo fallback so the UI shines even before films.json/series.json are live.
 const DEMO_FILMS: Film[] = Array.from({ length: 12 }).map((_, i) => ({
