@@ -256,8 +256,11 @@ export async function fetchXtreamCatalog(c: XtreamCreds): Promise<ConvertResult>
     }>>("get_series").catch(() => []),
   ]);
 
-  const vodCatMap = new Map(vodCats.map((c) => [String(c.category_id), c.category_name]));
-  const seriesCatMap = new Map(seriesCats.map((c) => [String(c.category_id), c.category_name]));
+  const vodCatMap = new Map<string, string>(
+    vodCats.map((c) => [String(c.category_id), c.category_name] as [string, string])
+  );
+  // seriesCatMap reserved for future series category surfacing
+  void seriesCats;
 
   const films: Film[] = vodStreams.map((s) => ({
     title: s.name,
