@@ -42,14 +42,37 @@ import { listEnabledInlineSources, listEnabledSources } from "./sources";
 
 const BASE = "https://vstreamzzz.veditzzz.site";
 
+// Public CORS proxies, tried in order if the direct fetch fails (e.g. the host
+// doesn't send Access-Control-Allow-Origin). Best-effort: if all are down,
+// returns the supplied fallback.
+const CORS_PROXIES = [
+  (u: string) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  (u: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+];
+
 async function safeJson<T>(url: string, fallback: T): Promise<T> {
+  // 1) Try direct fetch first — works if the host already allows CORS.
   try {
     const res = await fetch(url, { mode: "cors" });
-    if (!res.ok) throw new Error(String(res.status));
-    return (await res.json()) as T;
+    if (res.ok) return (await res.json()) as T;
   } catch {
-    return fallback;
+    /* fall through to proxies */
   }
+  // 2) Try each proxy in turn.
+  for (const wrap of CORS_PROXIES) {
+    try {
+      const res = await fetch(wrap(url));
+      if (!res.ok) continue;
+      const text = await res.text();
+      const trimmed = text.trim();
+      const jsonStart = trimmed.search(/[\[{]/);
+      if (jsonStart < 0) continue;
+      return JSON.parse(trimmed.slice(jsonStart)) as T;
+    } catch {
+      /* try next proxy */
+    }
+  }
+  return fallback;
 }
 
 function safeParseInline<T>(raw: string): T[] {
