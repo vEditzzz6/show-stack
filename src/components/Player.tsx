@@ -166,7 +166,7 @@ export const Player = ({ open, url, title, onOpenChange }: PlayerProps) => {
       // Raw MPEG-TS via mpegts.js
       const player = mpegts.createPlayer(
         { type: "mpegts", isLive: false, url },
-        { enableWorker: true, lazyLoad: false, cors: true }
+        { enableWorker: true, lazyLoad: false }
       );
       tsRef.current = player;
       player.attachMediaElement(video);
@@ -175,7 +175,10 @@ export const Player = ({ open, url, title, onOpenChange }: PlayerProps) => {
         toast.error(`MPEG-TS: ${type} — ${detail}`);
       });
       player.load();
-      player.play().catch(() => toast("Tap play to start."));
+      const tsPlay = player.play() as unknown as Promise<void> | void;
+      if (tsPlay && typeof (tsPlay as Promise<void>).catch === "function") {
+        (tsPlay as Promise<void>).catch(() => toast("Tap play to start."));
+      }
     } else {
       // Native MP4/WebM, or Safari's built-in HLS
       video.src = url;
