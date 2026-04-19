@@ -382,15 +382,18 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
         </DialogHeader>
 
         <Tabs defaultValue="urls" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="urls">
-              <LinkIcon className="mr-2 h-3.5 w-3.5" /> URL Sources
+              <LinkIcon className="mr-2 h-3.5 w-3.5" /> URLs
             </TabsTrigger>
             <TabsTrigger value="upload">
-              <Upload className="mr-2 h-3.5 w-3.5" /> Upload JSON
+              <Upload className="mr-2 h-3.5 w-3.5" /> Upload
             </TabsTrigger>
             <TabsTrigger value="generate">
               <Wand2 className="mr-2 h-3.5 w-3.5" /> Generate
+            </TabsTrigger>
+            <TabsTrigger value="iptv">
+              <Tv className="mr-2 h-3.5 w-3.5" /> IPTV
             </TabsTrigger>
           </TabsList>
 
