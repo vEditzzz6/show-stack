@@ -682,6 +682,182 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
               )}
             </section>
           </TabsContent>
+
+          {/* ============ IPTV ============ */}
+          <TabsContent value="iptv" className="mt-4 space-y-6">
+            <section className="space-y-3 rounded-md border border-border/60 bg-card/40 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                Import an IPTV source
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Live channels are skipped — only VOD movies and series are added to your library.
+              </p>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="iptv-name">Display name (optional)</Label>
+                  <Input
+                    id="iptv-name"
+                    placeholder="My provider"
+                    value={iptvName}
+                    maxLength={60}
+                    onChange={(e) => setIptvName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="iptv-source">Source type</Label>
+                  <Select value={iptvSource} onValueChange={(v) => setIptvSource(v as typeof iptvSource)}>
+                    <SelectTrigger id="iptv-source">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="m3u">M3U / M3U8 playlist</SelectItem>
+                      <SelectItem value="xtream">Xtream Codes API</SelectItem>
+                      <SelectItem value="stalker">Stalker / MAC portal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {iptvSource === "m3u" && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="m3u-url">Playlist URL</Label>
+                    <Input
+                      id="m3u-url"
+                      placeholder="https://example.com/playlist.m3u"
+                      value={m3uUrl}
+                      onChange={(e) => setM3uUrl(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">or</span>
+                    <input
+                      ref={m3uFileRef}
+                      type="file"
+                      accept=".m3u,.m3u8,audio/x-mpegurl,application/x-mpegurl,text/plain"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleM3uFile(f);
+                      }}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => m3uFileRef.current?.click()}
+                      disabled={iptvBusy}
+                    >
+                      <Upload className="mr-2 h-3.5 w-3.5" /> Upload .m3u file
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {iptvSource === "xtream" && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="xt-host">Host</Label>
+                    <Input
+                      id="xt-host"
+                      placeholder="http://line.example.com:8080"
+                      value={xtHost}
+                      onChange={(e) => setXtHost(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="xt-user">Username</Label>
+                      <Input
+                        id="xt-user"
+                        value={xtUser}
+                        onChange={(e) => setXtUser(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="xt-pass">Password</Label>
+                      <Input
+                        id="xt-pass"
+                        type="password"
+                        value={xtPass}
+                        onChange={(e) => setXtPass(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="xt-mode">Fetch mode</Label>
+                    <Select value={xtMode} onValueChange={(v) => setXtMode(v as "api" | "m3u")}>
+                      <SelectTrigger id="xt-mode">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="api">player_api.php (richer metadata)</SelectItem>
+                        <SelectItem value="m3u">get.php m3u_plus (faster)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {iptvSource === "stalker" && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="st-portal">Portal URL</Label>
+                    <Input
+                      id="st-portal"
+                      placeholder="http://portal.example.com/c/"
+                      value={stPortal}
+                      onChange={(e) => setStPortal(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="st-mac">MAC address</Label>
+                    <Input
+                      id="st-mac"
+                      placeholder="00:1A:79:XX:XX:XX"
+                      value={stMac}
+                      onChange={(e) => setStMac(e.target.value)}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Stalker portals typically block browsers via CORS — most public portals will fail to load. Use M3U or Xtream when possible.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1.5 border-t border-border/60 pt-3">
+                <Label htmlFor="epg-url">XMLTV EPG URL (optional)</Label>
+                <Input
+                  id="epg-url"
+                  placeholder="https://example.com/epg.xml"
+                  value={epgUrl}
+                  onChange={(e) => setEpgUrl(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  EPG is parsed and used to enrich episode air dates where titles match.
+                </p>
+              </div>
+
+              <Button onClick={handleIptvImport} disabled={iptvBusy} className="w-full md:w-auto">
+                {iptvBusy ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Tv className="mr-2 h-4 w-4" />
+                )}
+                Import to library
+              </Button>
+
+              {iptvSummary && (
+                <div className="rounded-md border border-border/60 bg-background/60 p-3 text-xs text-muted-foreground">
+                  {iptvSummary}
+                </div>
+              )}
+            </section>
+
+            <p className="text-xs text-muted-foreground">
+              Imported items appear under the <strong>Upload</strong> tab as inline catalogs and merge into your Films / Series rows. Toggle or remove them there.
+            </p>
+          </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
