@@ -10,6 +10,7 @@ import {
   FileJson,
   Loader2,
   X,
+  Tv,
 } from "lucide-react";
 import {
   Dialog,
@@ -47,6 +48,16 @@ import {
   type SourceKind,
 } from "@/lib/sources";
 import { downloadJson, generateCatalog } from "@/lib/generator";
+import {
+  parseM3U,
+  entriesToCatalog,
+  fetchM3U,
+  fetchXtreamCatalog,
+  xtreamPlaylistUrl,
+  fetchStalkerPlaylist,
+  fetchXmltv,
+  type EpgData,
+} from "@/lib/iptv";
 
 const sourceSchema = z.object({
   name: z.string().trim().min(1, "Give it a name").max(60, "Max 60 chars"),
