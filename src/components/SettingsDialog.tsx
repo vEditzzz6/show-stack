@@ -10,6 +10,7 @@ import {
   FileJson,
   Loader2,
   X,
+  Tv,
 } from "lucide-react";
 import {
   Dialog,
@@ -47,6 +48,16 @@ import {
   type SourceKind,
 } from "@/lib/sources";
 import { downloadJson, generateCatalog } from "@/lib/generator";
+import {
+  parseM3U,
+  entriesToCatalog,
+  fetchM3U,
+  fetchXtreamCatalog,
+  xtreamPlaylistUrl,
+  fetchStalkerPlaylist,
+  fetchXmltv,
+  type EpgData,
+} from "@/lib/iptv";
 
 const sourceSchema = z.object({
   name: z.string().trim().min(1, "Give it a name").max(60, "Max 60 chars"),
@@ -82,6 +93,22 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
   const [genUrls, setGenUrls] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genPreview, setGenPreview] = useState<unknown[] | null>(null);
+
+  // ---- IPTV state ----
+  type IptvSource = "m3u" | "xtream" | "stalker";
+  const [iptvSource, setIptvSource] = useState<IptvSource>("m3u");
+  const [iptvName, setIptvName] = useState("");
+  const [m3uUrl, setM3uUrl] = useState("");
+  const m3uFileRef = useRef<HTMLInputElement | null>(null);
+  const [xtHost, setXtHost] = useState("");
+  const [xtUser, setXtUser] = useState("");
+  const [xtPass, setXtPass] = useState("");
+  const [xtMode, setXtMode] = useState<"api" | "m3u">("api");
+  const [stPortal, setStPortal] = useState("");
+  const [stMac, setStMac] = useState("");
+  const [epgUrl, setEpgUrl] = useState("");
+  const [iptvBusy, setIptvBusy] = useState(false);
+  const [iptvSummary, setIptvSummary] = useState<string | null>(null);
 
   const refresh = () => {
     setSources(listSources());
@@ -235,9 +262,118 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
     setGenName("");
   };
 
+  // ---- IPTV handlers ----
+  const importParsed = (
+    name: string,
+    films: ReturnType<typeof entriesToCatalog>["films"],
+    series: ReturnType<typeof entriesToCatalog>["series"],
+    skipped: { live: number; unknown: number },
+    epg?: EpgData
+  ) => {
+    // Optionally enrich episode air dates from EPG (best-effort title match).
+    if (epg && epg.programmes.length) {
+      const titleIndex = new Map<string, Date>();
+      for (const p of epg.programmes) {
+        const k = p.title.toLowerCase().trim();
+        if (k && !titleIndex.has(k)) titleIndex.set(k, p.start);
+      }
+      for (const s of series) {
+        for (const season of s.seasons) {
+          for (const ep of season.episodes) {
+            if (!ep.air_date) {
+              const hit = titleIndex.get(ep.title.toLowerCase().trim());
+              if (hit) ep.air_date = hit.toISOString().slice(0, 10);
+            }
+          }
+        }
+      }
+    }
+    let added = 0;
+    if (films.length) {
+      addInlineSource({ name: `${name} — Films`, kind: "films", data: films });
+      added += films.length;
+    }
+    if (series.length) {
+      addInlineSource({ name: `${name} — Series`, kind: "series", data: series });
+      added += series.length;
+    }
+    emitSourcesChanged();
+    refresh();
+    setIptvSummary(
+      `Imported ${films.length} films, ${series.length} series. Skipped ${skipped.live} live channels, ${skipped.unknown} unknown.`
+    );
+    toast({
+      title: "IPTV imported",
+      description: `${added} items added to your library.`,
+    });
+  };
+
+  const handleIptvImport = async () => {
+    if (iptvBusy) return;
+    setIptvBusy(true);
+    setIptvSummary(null);
+    try {
+      const epg = epgUrl.trim() ? await fetchXmltv(epgUrl.trim()).catch(() => undefined) : undefined;
+      const baseName = iptvName.trim() || `IPTV ${new Date().toLocaleDateString()}`;
+
+      if (iptvSource === "m3u") {
+        if (!m3uUrl.trim()) throw new Error("Provide an M3U URL or upload a file.");
+        const text = await fetchM3U(m3uUrl.trim());
+        const { films, series, skipped } = entriesToCatalog(parseM3U(text));
+        importParsed(baseName, films, series, skipped, epg);
+      } else if (iptvSource === "xtream") {
+        if (!xtHost.trim() || !xtUser.trim() || !xtPass.trim())
+          throw new Error("Host, username and password are required.");
+        const creds = { host: xtHost.trim(), username: xtUser.trim(), password: xtPass.trim() };
+        if (xtMode === "api") {
+          const { films, series, skipped } = await fetchXtreamCatalog(creds);
+          importParsed(baseName, films, series, skipped, epg);
+        } else {
+          const text = await fetchM3U(xtreamPlaylistUrl(creds));
+          const { films, series, skipped } = entriesToCatalog(parseM3U(text));
+          importParsed(baseName, films, series, skipped, epg);
+        }
+      } else {
+        if (!stPortal.trim() || !stMac.trim())
+          throw new Error("Portal URL and MAC address are required.");
+        const text = await fetchStalkerPlaylist({ portal: stPortal.trim(), mac: stMac.trim() });
+        const { films, series, skipped } = entriesToCatalog(parseM3U(text));
+        importParsed(baseName, films, series, skipped, epg);
+      }
+    } catch (err) {
+      toast({
+        title: "IPTV import failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIptvBusy(false);
+    }
+  };
+
+  const handleM3uFile = async (file: File) => {
+    setIptvBusy(true);
+    setIptvSummary(null);
+    try {
+      const epg = epgUrl.trim() ? await fetchXmltv(epgUrl.trim()).catch(() => undefined) : undefined;
+      const text = await file.text();
+      const { films, series, skipped } = entriesToCatalog(parseM3U(text));
+      importParsed(iptvName.trim() || file.name, films, series, skipped, epg);
+    } catch (err) {
+      toast({
+        title: "M3U parse failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIptvBusy(false);
+      if (m3uFileRef.current) m3uFileRef.current.value = "";
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -246,15 +382,18 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
         </DialogHeader>
 
         <Tabs defaultValue="urls" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="urls">
-              <LinkIcon className="mr-2 h-3.5 w-3.5" /> URL Sources
+              <LinkIcon className="mr-2 h-3.5 w-3.5" /> URLs
             </TabsTrigger>
             <TabsTrigger value="upload">
-              <Upload className="mr-2 h-3.5 w-3.5" /> Upload JSON
+              <Upload className="mr-2 h-3.5 w-3.5" /> Upload
             </TabsTrigger>
             <TabsTrigger value="generate">
               <Wand2 className="mr-2 h-3.5 w-3.5" /> Generate
+            </TabsTrigger>
+            <TabsTrigger value="iptv">
+              <Tv className="mr-2 h-3.5 w-3.5" /> IPTV
             </TabsTrigger>
           </TabsList>
 
@@ -542,6 +681,182 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
                 </div>
               )}
             </section>
+          </TabsContent>
+
+          {/* ============ IPTV ============ */}
+          <TabsContent value="iptv" className="mt-4 space-y-6">
+            <section className="space-y-3 rounded-md border border-border/60 bg-card/40 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                Import an IPTV source
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Live channels are skipped — only VOD movies and series are added to your library.
+              </p>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="iptv-name">Display name (optional)</Label>
+                  <Input
+                    id="iptv-name"
+                    placeholder="My provider"
+                    value={iptvName}
+                    maxLength={60}
+                    onChange={(e) => setIptvName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="iptv-source">Source type</Label>
+                  <Select value={iptvSource} onValueChange={(v) => setIptvSource(v as typeof iptvSource)}>
+                    <SelectTrigger id="iptv-source">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="m3u">M3U / M3U8 playlist</SelectItem>
+                      <SelectItem value="xtream">Xtream Codes API</SelectItem>
+                      <SelectItem value="stalker">Stalker / MAC portal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {iptvSource === "m3u" && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="m3u-url">Playlist URL</Label>
+                    <Input
+                      id="m3u-url"
+                      placeholder="https://example.com/playlist.m3u"
+                      value={m3uUrl}
+                      onChange={(e) => setM3uUrl(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">or</span>
+                    <input
+                      ref={m3uFileRef}
+                      type="file"
+                      accept=".m3u,.m3u8,audio/x-mpegurl,application/x-mpegurl,text/plain"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleM3uFile(f);
+                      }}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => m3uFileRef.current?.click()}
+                      disabled={iptvBusy}
+                    >
+                      <Upload className="mr-2 h-3.5 w-3.5" /> Upload .m3u file
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {iptvSource === "xtream" && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="xt-host">Host</Label>
+                    <Input
+                      id="xt-host"
+                      placeholder="http://line.example.com:8080"
+                      value={xtHost}
+                      onChange={(e) => setXtHost(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="xt-user">Username</Label>
+                      <Input
+                        id="xt-user"
+                        value={xtUser}
+                        onChange={(e) => setXtUser(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="xt-pass">Password</Label>
+                      <Input
+                        id="xt-pass"
+                        type="password"
+                        value={xtPass}
+                        onChange={(e) => setXtPass(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="xt-mode">Fetch mode</Label>
+                    <Select value={xtMode} onValueChange={(v) => setXtMode(v as "api" | "m3u")}>
+                      <SelectTrigger id="xt-mode">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="api">player_api.php (richer metadata)</SelectItem>
+                        <SelectItem value="m3u">get.php m3u_plus (faster)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {iptvSource === "stalker" && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="st-portal">Portal URL</Label>
+                    <Input
+                      id="st-portal"
+                      placeholder="http://portal.example.com/c/"
+                      value={stPortal}
+                      onChange={(e) => setStPortal(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="st-mac">MAC address</Label>
+                    <Input
+                      id="st-mac"
+                      placeholder="00:1A:79:XX:XX:XX"
+                      value={stMac}
+                      onChange={(e) => setStMac(e.target.value)}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Stalker portals typically block browsers via CORS — most public portals will fail to load. Use M3U or Xtream when possible.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1.5 border-t border-border/60 pt-3">
+                <Label htmlFor="epg-url">XMLTV EPG URL (optional)</Label>
+                <Input
+                  id="epg-url"
+                  placeholder="https://example.com/epg.xml"
+                  value={epgUrl}
+                  onChange={(e) => setEpgUrl(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  EPG is parsed and used to enrich episode air dates where titles match.
+                </p>
+              </div>
+
+              <Button onClick={handleIptvImport} disabled={iptvBusy} className="w-full md:w-auto">
+                {iptvBusy ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Tv className="mr-2 h-4 w-4" />
+                )}
+                Import to library
+              </Button>
+
+              {iptvSummary && (
+                <div className="rounded-md border border-border/60 bg-background/60 p-3 text-xs text-muted-foreground">
+                  {iptvSummary}
+                </div>
+              )}
+            </section>
+
+            <p className="text-xs text-muted-foreground">
+              Imported items appear under the <strong>Upload</strong> tab as inline catalogs and merge into your Films / Series rows. Toggle or remove them there.
+            </p>
           </TabsContent>
         </Tabs>
       </DialogContent>
