@@ -94,6 +94,22 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
   const [generating, setGenerating] = useState(false);
   const [genPreview, setGenPreview] = useState<unknown[] | null>(null);
 
+  // ---- IPTV state ----
+  type IptvSource = "m3u" | "xtream" | "stalker";
+  const [iptvSource, setIptvSource] = useState<IptvSource>("m3u");
+  const [iptvName, setIptvName] = useState("");
+  const [m3uUrl, setM3uUrl] = useState("");
+  const m3uFileRef = useRef<HTMLInputElement | null>(null);
+  const [xtHost, setXtHost] = useState("");
+  const [xtUser, setXtUser] = useState("");
+  const [xtPass, setXtPass] = useState("");
+  const [xtMode, setXtMode] = useState<"api" | "m3u">("api");
+  const [stPortal, setStPortal] = useState("");
+  const [stMac, setStMac] = useState("");
+  const [epgUrl, setEpgUrl] = useState("");
+  const [iptvBusy, setIptvBusy] = useState(false);
+  const [iptvSummary, setIptvSummary] = useState<string | null>(null);
+
   const refresh = () => {
     setSources(listSources());
     setInline(listInlineSources());
