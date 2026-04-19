@@ -262,9 +262,118 @@ export const SettingsDialog = ({ open, onOpenChange }: SettingsDialogProps) => {
     setGenName("");
   };
 
+  // ---- IPTV handlers ----
+  const importParsed = (
+    name: string,
+    films: ReturnType<typeof entriesToCatalog>["films"],
+    series: ReturnType<typeof entriesToCatalog>["series"],
+    skipped: { live: number; unknown: number },
+    epg?: EpgData
+  ) => {
+    // Optionally enrich episode air dates from EPG (best-effort title match).
+    if (epg && epg.programmes.length) {
+      const titleIndex = new Map<string, Date>();
+      for (const p of epg.programmes) {
+        const k = p.title.toLowerCase().trim();
+        if (k && !titleIndex.has(k)) titleIndex.set(k, p.start);
+      }
+      for (const s of series) {
+        for (const season of s.seasons) {
+          for (const ep of season.episodes) {
+            if (!ep.air_date) {
+              const hit = titleIndex.get(ep.title.toLowerCase().trim());
+              if (hit) ep.air_date = hit.toISOString().slice(0, 10);
+            }
+          }
+        }
+      }
+    }
+    let added = 0;
+    if (films.length) {
+      addInlineSource({ name: `${name} — Films`, kind: "films", data: films });
+      added += films.length;
+    }
+    if (series.length) {
+      addInlineSource({ name: `${name} — Series`, kind: "series", data: series });
+      added += series.length;
+    }
+    emitSourcesChanged();
+    refresh();
+    setIptvSummary(
+      `Imported ${films.length} films, ${series.length} series. Skipped ${skipped.live} live channels, ${skipped.unknown} unknown.`
+    );
+    toast({
+      title: "IPTV imported",
+      description: `${added} items added to your library.`,
+    });
+  };
+
+  const handleIptvImport = async () => {
+    if (iptvBusy) return;
+    setIptvBusy(true);
+    setIptvSummary(null);
+    try {
+      const epg = epgUrl.trim() ? await fetchXmltv(epgUrl.trim()).catch(() => undefined) : undefined;
+      const baseName = iptvName.trim() || `IPTV ${new Date().toLocaleDateString()}`;
+
+      if (iptvSource === "m3u") {
+        if (!m3uUrl.trim()) throw new Error("Provide an M3U URL or upload a file.");
+        const text = await fetchM3U(m3uUrl.trim());
+        const { films, series, skipped } = entriesToCatalog(parseM3U(text));
+        importParsed(baseName, films, series, skipped, epg);
+      } else if (iptvSource === "xtream") {
+        if (!xtHost.trim() || !xtUser.trim() || !xtPass.trim())
+          throw new Error("Host, username and password are required.");
+        const creds = { host: xtHost.trim(), username: xtUser.trim(), password: xtPass.trim() };
+        if (xtMode === "api") {
+          const { films, series, skipped } = await fetchXtreamCatalog(creds);
+          importParsed(baseName, films, series, skipped, epg);
+        } else {
+          const text = await fetchM3U(xtreamPlaylistUrl(creds));
+          const { films, series, skipped } = entriesToCatalog(parseM3U(text));
+          importParsed(baseName, films, series, skipped, epg);
+        }
+      } else {
+        if (!stPortal.trim() || !stMac.trim())
+          throw new Error("Portal URL and MAC address are required.");
+        const text = await fetchStalkerPlaylist({ portal: stPortal.trim(), mac: stMac.trim() });
+        const { films, series, skipped } = entriesToCatalog(parseM3U(text));
+        importParsed(baseName, films, series, skipped, epg);
+      }
+    } catch (err) {
+      toast({
+        title: "IPTV import failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIptvBusy(false);
+    }
+  };
+
+  const handleM3uFile = async (file: File) => {
+    setIptvBusy(true);
+    setIptvSummary(null);
+    try {
+      const epg = epgUrl.trim() ? await fetchXmltv(epgUrl.trim()).catch(() => undefined) : undefined;
+      const text = await file.text();
+      const { films, series, skipped } = entriesToCatalog(parseM3U(text));
+      importParsed(iptvName.trim() || file.name, films, series, skipped, epg);
+    } catch (err) {
+      toast({
+        title: "M3U parse failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIptvBusy(false);
+      if (m3uFileRef.current) m3uFileRef.current.value = "";
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
